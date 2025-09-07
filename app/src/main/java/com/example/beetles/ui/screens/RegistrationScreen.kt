@@ -14,6 +14,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.beetles.models.Player
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,6 +32,7 @@ fun RegistrationScreen() {
 
     val courses = listOf("1 курс", "2 курс", "3 курс", "4 курс", "5 курс", "6 курс")
     val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -130,7 +133,7 @@ fun RegistrationScreen() {
         }
 
         if (showDatePickerDialog) {
-            DatePickerDialog(
+            CustomDatePickerDialog(
                 onDismissRequest = { showDatePickerDialog = false },
                 onDateSelected = { calendar ->
                     birthDate = calendar
@@ -153,6 +156,12 @@ fun RegistrationScreen() {
                     zodiacSign = zodiacSign
                 )
                 showResult = true
+                // Автоматическая прокрутка к результату
+                coroutineScope.launch {
+                    // Небольшая задержка для обновления UI
+                    delay(100)
+                    scrollState.animateScrollTo(scrollState.maxValue)
+                }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -162,20 +171,37 @@ fun RegistrationScreen() {
         if (showResult && player != null) {
             Spacer(modifier = Modifier.height(24.dp))
             PlayerInfoCard(player = player!!)
+
+            // Кнопка для возврата к форме
+            Button(
+                onClick = {
+                    showResult = false
+                    player = null
+                    // Прокрутка обратно к верху
+                    coroutineScope.launch {
+                        scrollState.animateScrollTo(0)
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+            ) {
+                Text("Вернуться к форме")
+            }
         }
+
+        // Добавляем дополнительный отступ внизу для удобства прокрутки
+        Spacer(modifier = Modifier.height(32.dp))
     }
 }
 
 @Composable
-fun DatePickerDialog(
+fun CustomDatePickerDialog(
     onDismissRequest: () -> Unit,
     onDateSelected: (Calendar) -> Unit
 ) {
     val context = LocalContext.current
     val calendar = remember { Calendar.getInstance() }
-    val year = calendar.get(Calendar.YEAR)
-    val month = calendar.get(Calendar.MONTH)
-    val day = calendar.get(Calendar.DAY_OF_MONTH)
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -200,11 +226,16 @@ fun DatePickerDialog(
             AndroidView(
                 factory = { ctx ->
                     DatePicker(ctx).apply {
+                        val year = calendar.get(Calendar.YEAR)
+                        val month = calendar.get(Calendar.MONTH)
+                        val day = calendar.get(Calendar.DAY_OF_MONTH)
+
                         init(year, month, day) { _, selectedYear, selectedMonth, selectedDay ->
                             calendar.set(selectedYear, selectedMonth, selectedDay)
                         }
                     }
-                }
+                },
+                modifier = Modifier.wrapContentSize()
             )
         }
     )
@@ -228,44 +259,26 @@ fun PlayerInfoCard(player: Player) {
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            Text(
-                text = "ФИО: ${player.fullName}",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                text = "Пол: ${player.gender}",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                text = "Курс: ${player.course}",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                text = "Уровень сложности: ${player.difficulty}/10",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                text = "Дата рождения: ${player.birthDate}",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Text(
-                text = "Знак зодиака: ${player.zodiacSign}",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+            PlayerInfoText("ФИО: ${player.fullName}")
+            PlayerInfoText("Пол: ${player.gender}")
+            PlayerInfoText("Курс: ${player.course}")
+            PlayerInfoText("Уровень сложности: ${player.difficulty}/10")
+            PlayerInfoText("Дата рождения: ${player.birthDate}")
+            PlayerInfoText("Знак зодиака: ${player.zodiacSign}")
         }
     }
+}
+
+@Composable
+fun PlayerInfoText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyLarge,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    )
 }
 
 fun formatDate(calendar: Calendar): String {
@@ -297,5 +310,7 @@ fun calculateZodiacSign(calendar: Calendar): String {
 @Preview(showBackground = true)
 @Composable
 fun RegistrationScreenPreview() {
-    RegistrationScreen()
+    MaterialTheme {
+        RegistrationScreen()
+    }
 }
