@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.beetles.models.Player
@@ -20,7 +21,9 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RegistrationScreen() {
+fun RegistrationScreen(
+    onStartGame: (String, Int) -> Unit = { _, _ -> }
+) {
     var fullName by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("") }
     var selectedCourse by remember { mutableStateOf("1 курс") }
@@ -172,6 +175,19 @@ fun RegistrationScreen() {
             Spacer(modifier = Modifier.height(24.dp))
             PlayerInfoCard(player = player!!)
 
+            // Кнопка для начала игры
+            Button(
+                onClick = {
+                    onStartGame(player!!.fullName, player!!.difficulty)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+            ) {
+                Text("Начать игру", color = Color.White)
+            }
+
             // Кнопка для возврата к форме
             Button(
                 onClick = {
@@ -184,7 +200,7 @@ fun RegistrationScreen() {
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp)
+                    .padding(top = 8.dp)
             ) {
                 Text("Вернуться к форме")
             }
