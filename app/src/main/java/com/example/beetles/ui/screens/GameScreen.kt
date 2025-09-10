@@ -1,6 +1,10 @@
 package com.example.beetles.ui.screens
 
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +26,15 @@ import com.example.beetles.models.Insect
 import com.example.beetles.models.InsectType
 import kotlinx.coroutines.delay
 import kotlin.random.Random
+
+// Константы для оптимизации
+private const val GAME_TICK_MS = 50L
+private const val SPAWN_BASE_DELAY_MS = 3000L
+private const val MISS_PENALTY = 5
+private const val COCKROACH_SCORE = 10
+private const val POISONOUS_PENALTY = 20
+private const val SCREEN_BOUNDS = 1000f
+private const val INSECT_SIZE_DP = 80f
 
 @Composable
 fun GameScreen(
@@ -49,61 +63,49 @@ fun GameScreen(
         isPaused = false
     }
     
-    // Запуск игры
-    LaunchedEffect(isGameRunning, isPaused) {
-        if (isGameRunning && !gameOver && !isPaused) {
-            while (gameTime > 0 && isGameRunning && !isPaused) {
-                delay(1000)
+    // Оптимизированный игровой цикл - объединяем все в один LaunchedEffect
+    LaunchedEffect(isGameRunning, isPaused, settings.gameSpeed, difficulty) {
+        if (!isGameRunning || gameOver || isPaused) return@LaunchedEffect
+        
+        var lastSpawnTime = 0L
+        var lastGameTimeUpdate = 0L
+        val gameStartTime = System.currentTimeMillis()
+        
+        while (isGameRunning && gameTime > 0 && !isPaused) {
+            val currentTime = System.currentTimeMillis()
+            val deltaTime = currentTime - gameStartTime
+            
+            // Обновление игрового времени (каждую секунду)
+            if (currentTime - lastGameTimeUpdate >= 1000) {
                 gameTime--
-            }
-            if (gameTime <= 0) {
-                gameOver = true
-                isGameRunning = false
-            }
-        }
-    }
-    
-    // Создание насекомых
-    LaunchedEffect(isGameRunning, isPaused) {
-        if (isGameRunning && !gameOver && !isPaused) {
-            while (isGameRunning && gameTime > 0 && !isPaused) {
-                try {
-                    // Сложность влияет на частоту появления насекомых (1-10 -> 3000-1000мс)
-                    val spawnDelay = (3000 - (difficulty - 1) * 200) / settings.gameSpeed
-                    delay(spawnDelay.toLong())
-                    if (insects.size < settings.maxCockroaches) {
-                        val newInsect = createRandomInsect(difficulty)
-                        insects = insects + newInsect
-                    }
-                } catch (e: Exception) {
-                    // Игнорируем ошибки создания насекомых
-                    delay(1000)
+                lastGameTimeUpdate = currentTime
+                if (gameTime <= 0) {
+                    gameOver = true
+                    isGameRunning = false
+                    break
                 }
             }
-        }
-    }
-    
-    // Движение насекомых
-    LaunchedEffect(insects, isGameRunning, isPaused) {
-        if (isGameRunning && !gameOver && !isPaused) {
-            while (isGameRunning && gameTime > 0 && !isPaused) {
-                try {
-                    delay((50 / settings.gameSpeed).toLong()) // Учитываем скорость игры
-                    insects = insects.map { insect ->
-                        // Сложность влияет на скорость движения (1-10 -> 0.5-3.0x)
-                        val speedMultiplier = 0.5f + (difficulty - 1) * 0.25f
-                        val newPosition = insect.position + insect.velocity * settings.gameSpeed * speedMultiplier
-                        insect.copy(position = newPosition)
-                    }.filter { insect ->
-                        // Удаляем насекомых, которые вышли за экран
-                        insect.position.x > -50 && insect.position.x < 1000 && 
-                        insect.position.y > -50 && insect.position.y < 1000
-                    }
-                } catch (e: Exception) {
-                    // Игнорируем ошибки движения насекомых
-                    delay(100)
-                }
+            
+            // Создание насекомых
+            val spawnDelay = (SPAWN_BASE_DELAY_MS - (difficulty - 1) * 200) / settings.gameSpeed
+            if (currentTime - lastSpawnTime >= spawnDelay && insects.size < settings.maxCockroaches) {
+                val newInsect = createRandomInsect(difficulty)
+                insects = insects + newInsect
+                lastSpawnTime = currentTime
             }
+            
+            // Движение насекомых (оптимизированное)
+            val speedMultiplier = 0.5f + (difficulty - 1) * 0.25f
+            insects = insects.mapNotNull { insect ->
+                val newPosition = insect.position + insect.velocity * settings.gameSpeed * speedMultiplier
+                // Проверяем границы экрана
+                if (newPosition.x > -50 && newPosition.x < SCREEN_BOUNDS && 
+                    newPosition.y > -50 && newPosition.y < SCREEN_BOUNDS) {
+                    insect.copy(position = newPosition)
+                } else null // Удаляем насекомых за границами
+            }
+            
+            delay(GAME_TICK_MS / settings.gameSpeed.toLong())
         }
     }
 
@@ -149,20 +151,27 @@ fun GameScreen(
                 .clickable { 
                     // Штраф за промах
                     if (isGameRunning && !gameOver && !isPaused) {
-                        score = maxOf(0, score - 5)
+                        score = maxOf(0, score - MISS_PENALTY)
                     }
                 }
         ) {
-            // Отрисовка насекомых
+            // Отрисовка насекомых с анимациями
             insects.forEach { insect ->
                 val iconRes = when (insect.type) {
-                    InsectType.COCKROACH -> R.drawable.cockroach_simple // Используем простую иконку
+                    InsectType.COCKROACH -> R.drawable.cockroach_simple
                     InsectType.POISONOUS -> R.drawable.poisonous_cockroach
                 }
-                val iconSize = 80.dp // Увеличил размер до 80dp
+                val iconSize = INSECT_SIZE_DP.dp
                 
                 // Проверяем, что позиция насекомого валидна
                 if (insect.position.x >= 0 && insect.position.y >= 0) {
+                    // Анимация масштаба для появления насекомого
+                    val scale by animateFloatAsState(
+                        targetValue = 1f,
+                        animationSpec = tween(300, easing = EaseOutBack),
+                        label = "insect_scale"
+                    )
+                    
                     Image(
                         painter = painterResource(id = iconRes),
                         contentDescription = if (insect.type == InsectType.POISONOUS) "Ядовитый таракан" else "Таракан",
@@ -172,15 +181,19 @@ fun GameScreen(
                                 y = with(density) { insect.position.y.toDp() - iconSize / 2 }
                             )
                             .size(iconSize)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                            }
                             .clickable {
                                 if (isGameRunning && !gameOver && !isPaused) {
                                     // Удаляем насекомое
                                     insects = insects.filter { it.id != insect.id }
                                     
                                     // Начисляем очки
-                                    score += when (insect.type) {
-                                        InsectType.COCKROACH -> 10
-                                        InsectType.POISONOUS -> -20
+                                    when (insect.type) {
+                                        InsectType.COCKROACH -> score += COCKROACH_SCORE
+                                        InsectType.POISONOUS -> score -= POISONOUS_PENALTY
                                     }
                                     score = maxOf(0, score) // Не даем уйти в минус
                                 }
