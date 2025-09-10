@@ -14,7 +14,9 @@ data class GameSettings(
 )
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+    onSettingsChanged: (GameSettings) -> Unit = {}
+) {
     var settings by remember { mutableStateOf(GameSettings()) }
 
     Column(
@@ -81,7 +83,9 @@ fun SettingsScreen() {
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = { /* Сохранение настроек */ },
+            onClick = { 
+                onSettingsChanged(settings)
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Сохранить настройки")
