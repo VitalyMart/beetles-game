@@ -16,19 +16,32 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.beetles.BeetleApplication
 import com.example.beetles.R
+import com.example.beetles.database.entities.Score
+import com.example.beetles.database.entities.User
 import com.example.beetles.models.Insect
 import com.example.beetles.models.InsectType
+import com.example.beetles.viewmodel.UserViewModel
+import com.example.beetles.viewmodel.UserViewModelFactory
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
 @Composable
 fun GameScreen(
     onBack: () -> Unit,
-    playerName: String = "Игрок",
+    user: User? = null,
     settings: GameSettings = GameSettings(),
     difficulty: Int = 5
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val application = context.applicationContext as BeetleApplication
+    val userViewModel: UserViewModel = viewModel(
+        factory = UserViewModelFactory(application.repository)
+    )
+    
+    val playerName = user?.fullName ?: "Игрок"
     var score by remember { mutableStateOf(0) }
     var gameTime by remember { mutableStateOf(settings.roundDuration) }
     var isGameRunning by remember { mutableStateOf(false) } // Игра не начинается сразу
@@ -59,6 +72,17 @@ fun GameScreen(
             if (gameTime <= 0) {
                 gameOver = true
                 isGameRunning = false
+                
+                // Сохраняем результат в базу данных
+                user?.let { currentUser ->
+                    val scoreRecord = Score(
+                        userId = currentUser.id,
+                        score = score,
+                        difficulty = difficulty,
+                        gameTime = settings.roundDuration - gameTime
+                    )
+                    userViewModel.insertScore(scoreRecord)
+                }
             }
         }
     }

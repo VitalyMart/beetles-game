@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.example.beetles.database.entities.User
 import com.example.beetles.ui.screens.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -11,15 +12,15 @@ import com.example.beetles.ui.screens.*
 fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
     var showGame by remember { mutableStateOf(false) }
-    var playerName by remember { mutableStateOf("") }
+    var currentUser by remember { mutableStateOf<User?>(null) }
     var playerDifficulty by remember { mutableStateOf(5) }
     var gameSettings by remember { mutableStateOf(GameSettings()) }
-    val tabs = listOf("Регистрация", "Правила", "Авторы", "Настройки")
+    val tabs = listOf("Регистрация", "Правила", "Авторы", "Настройки", "Рекорды")
 
     if (showGame) {
         GameScreen(
             onBack = { showGame = false },
-            playerName = playerName,
+            user = currentUser,
             settings = gameSettings,
             difficulty = playerDifficulty
         )
@@ -44,8 +45,8 @@ fun MainScreen() {
 
                     when (selectedTab) {
                         0 -> RegistrationScreen(
-                            onStartGame = { name, difficulty ->
-                                playerName = name
+                            onStartGame = { user, difficulty ->
+                                currentUser = user
                                 playerDifficulty = difficulty
                                 showGame = true
                             }
@@ -57,6 +58,7 @@ fun MainScreen() {
                                 gameSettings = settings
                             }
                         )
+                        4 -> ScoresScreen()
                     }
                 }
             }

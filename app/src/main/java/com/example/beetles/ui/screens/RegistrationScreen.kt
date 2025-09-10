@@ -14,7 +14,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.beetles.BeetleApplication
+import com.example.beetles.database.entities.User
 import com.example.beetles.models.Player
+import com.example.beetles.viewmodel.UserViewModel
+import com.example.beetles.viewmodel.UserViewModelFactory
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.*
@@ -22,15 +27,20 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegistrationScreen(
-    onStartGame: (String, Int) -> Unit = { _, _ -> }
+    onStartGame: (User, Int) -> Unit = { _, _ -> }
 ) {
+    val context = LocalContext.current
+    val application = context.applicationContext as BeetleApplication
+    val userViewModel: UserViewModel = viewModel(
+        factory = UserViewModelFactory(application.repository)
+    )
     var fullName by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("") }
     var selectedCourse by remember { mutableStateOf("1 курс") }
     var difficulty by remember { mutableStateOf(5) }
     var birthDate by remember { mutableStateOf(Calendar.getInstance()) }
     var showResult by remember { mutableStateOf(false) }
-    var player by remember { mutableStateOf<Player?>(null) }
+    var currentUser by remember { mutableStateOf<User?>(null) }
     var showDatePickerDialog by remember { mutableStateOf(false) }
 
     val courses = listOf("1 курс", "2 курс", "3 курс", "4 курс", "5 курс", "6 курс")
@@ -149,36 +159,49 @@ fun RegistrationScreen(
 
         Button(
             onClick = {
-                val zodiacSign = calculateZodiacSign(birthDate)
-                player = Player(
-                    fullName = fullName,
-                    gender = gender,
-                    course = selectedCourse,
-                    difficulty = difficulty,
-                    birthDate = formatDate(birthDate),
-                    zodiacSign = zodiacSign
-                )
-                showResult = true
-                // Автоматическая прокрутка к результату
-                coroutineScope.launch {
-                    // Небольшая задержка для обновления UI
-                    delay(100)
-                    scrollState.animateScrollTo(scrollState.maxValue)
+                // Проверяем, существует ли пользователь с таким ФИО
+                userViewModel.getUserByName(fullName) { existingUser ->
+                    if (existingUser != null) {
+                        // Используем существующего пользователя
+                        currentUser = existingUser
+                        showResult = true
+                        coroutineScope.launch {
+                            scrollState.animateScrollTo(scrollState.maxValue)
+                        }
+                    } else {
+                        // Создаем нового пользователя
+                        val zodiacSign = calculateZodiacSign(birthDate)
+                        val newUser = User(
+                            fullName = fullName,
+                            gender = gender,
+                            course = selectedCourse,
+                            birthDate = formatDate(birthDate),
+                            zodiacSign = zodiacSign
+                        )
+                        userViewModel.insertUser(newUser) { userId ->
+                            currentUser = newUser.copy(id = userId)
+                            showResult = true
+                            coroutineScope.launch {
+                                scrollState.animateScrollTo(scrollState.maxValue)
+                            }
+                        }
+                    }
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = fullName.isNotBlank() && gender.isNotBlank()
         ) {
             Text("Зарегистрироваться")
         }
 
-        if (showResult && player != null) {
+        if (showResult && currentUser != null) {
             Spacer(modifier = Modifier.height(24.dp))
-            PlayerInfoCard(player = player!!)
+            UserInfoCard(user = currentUser!!)
 
             // Кнопка для начала игры
             Button(
                 onClick = {
-                    onStartGame(player!!.fullName, player!!.difficulty)
+                    onStartGame(currentUser!!, difficulty)
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -192,7 +215,7 @@ fun RegistrationScreen(
             Button(
                 onClick = {
                     showResult = false
-                    player = null
+                    currentUser = null
                     // Прокрутка обратно к верху
                     coroutineScope.launch {
                         scrollState.animateScrollTo(0)
@@ -258,7 +281,7 @@ fun CustomDatePickerDialog(
 }
 
 @Composable
-fun PlayerInfoCard(player: Player) {
+fun UserInfoCard(user: User) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -275,12 +298,11 @@ fun PlayerInfoCard(player: Player) {
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
-            PlayerInfoText("ФИО: ${player.fullName}")
-            PlayerInfoText("Пол: ${player.gender}")
-            PlayerInfoText("Курс: ${player.course}")
-            PlayerInfoText("Уровень сложности: ${player.difficulty}/10")
-            PlayerInfoText("Дата рождения: ${player.birthDate}")
-            PlayerInfoText("Знак зодиака: ${player.zodiacSign}")
+            PlayerInfoText("ФИО: ${user.fullName}")
+            PlayerInfoText("Пол: ${user.gender}")
+            PlayerInfoText("Курс: ${user.course}")
+            PlayerInfoText("Дата рождения: ${user.birthDate}")
+            PlayerInfoText("Знак зодиака: ${user.zodiacSign}")
         }
     }
 }
