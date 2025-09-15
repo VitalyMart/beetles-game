@@ -1,0 +1,62 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="80dp"
+    android:height="80dp"
+    android:viewportWidth="80"
+    android:viewportHeight="80">
+    <!-- Тело таракана -->
+    <path
+        android:fillColor="#8D6E63"
+        android:pathData="M40,16C32,16 24,24 24,32C24,40 32,48 40,48C48,48 56,40 56,32C56,24 48,16 40,16ZM40,18C46,18 52,24 52,30C52,36 46,42 40,42C34,42 28,36 28,30C28,24 34,18 40,18Z"/>
+    
+    <!-- Голова -->
+    <path
+        android:fillColor="#5D4037"
+        android:pathData="M36,24C36,24 38,26 40,26C42,26 44,24 44,24L46,26C46,26 44,28 40,28C36,28 34,26 34,26L36,24Z"/>
+    
+    <!-- Глаза -->
+    <path
+        android:fillColor="#3E2723"
+        android:pathData="M38,24A2,2 0,1 1,38 28A2,2 0,1 1,38 24Z"/>
+    <path
+        android:fillColor="#3E2723"
+        android:pathData="M42,24A2,2 0,1 1,42 28A2,2 0,1 1,42 24Z"/>
+    
+    <!-- Усики -->
+    <path
+        android:fillColor="#3E2723"
+        android:strokeWidth="2"
+        android:strokeColor="#3E2723"
+        android:pathData="M38,22L34,18"/>
+    <path
+        android:fillColor="#3E2723"
+        android:strokeWidth="2"
+        android:strokeColor="#3E2723"
+        android:pathData="M42,22L46,18"/>
+    
+    <!-- Лапки -->
+    <path
+        android:fillColor="#5D4037"
+        android:strokeWidth="2"
+        android:strokeColor="#5D4037"
+        android:pathData="M32,32L28,36"/>
+    <path
+        android:fillColor="#5D4037"
+        android:strokeWidth="2"
+        android:strokeColor="#5D4037"
+        android:pathData="M48,32L52,36"/>
+    <path
+        android:fillColor="#5D4037"
+        android:strokeWidth="2"
+        android:strokeColor="#5D4037"
+        android:pathData="M32,40L28,44"/>
+    <path
+        android:fillColor="#5D4037"
+        android:strokeWidth="2"
+        android:strokeColor="#5D4037"
+        android:pathData="M48,40L52,44"/>
+    
+    <!-- Крылья -->
+    <path
+        android:fillColor="#6D4C41"
+        android:pathData="M36,30C36,30 38,28 40,28C42,28 44,30 44,30L44,34C44,34 42,36 40,36C38,36 36,34 36,34L36,30Z"/>
+</vector>

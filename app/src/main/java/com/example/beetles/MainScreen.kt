@@ -4,39 +4,64 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.example.beetles.database.entities.User
 import com.example.beetles.ui.screens.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Регистрация", "Правила", "Авторы", "Настройки")
+    var showGame by remember { mutableStateOf(false) }
+    var currentUser by remember { mutableStateOf<User?>(null) }
+    var playerDifficulty by remember { mutableStateOf(5) }
+    var gameSettings by remember { mutableStateOf(GameSettings()) }
+    val tabs = listOf("Регистрация", "Правила", "Авторы", "Настройки", "Рекорды")
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Игра Тараканы") }
-            )
-        },
-        content = { innerPadding ->
-            Column(modifier = Modifier.padding(innerPadding)) {
-                TabRow(selectedTabIndex = selectedTab) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            text = { Text(title) },
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index }
+    if (showGame) {
+        GameScreen(
+            onBack = { showGame = false },
+            user = currentUser,
+            settings = gameSettings,
+            difficulty = playerDifficulty
+        )
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("Игра Жуки") }
+                )
+            },
+            content = { innerPadding ->
+                Column(modifier = Modifier.padding(innerPadding)) {
+                    TabRow(selectedTabIndex = selectedTab) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                text = { Text(title) },
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index }
+                            )
+                        }
+                    }
+
+                    when (selectedTab) {
+                        0 -> RegistrationScreen(
+                            onStartGame = { user, difficulty ->
+                                currentUser = user
+                                playerDifficulty = difficulty
+                                showGame = true
+                            }
                         )
+                        1 -> RulesScreen()
+                        2 -> AuthorsScreen()
+                        3 -> SettingsScreen(
+                            onSettingsChanged = { settings ->
+                                gameSettings = settings
+                            }
+                        )
+                        4 -> ScoresScreen()
                     }
                 }
-
-                when (selectedTab) {
-                    0 -> RegistrationScreen()
-                    1 -> RulesScreen()
-                    2 -> AuthorsScreen()
-                    3 -> SettingsScreen()
-                }
             }
-        }
-    )
+        )
+    }
 }
