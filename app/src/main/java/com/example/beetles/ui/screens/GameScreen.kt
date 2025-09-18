@@ -1,5 +1,6 @@
 package com.example.beetles.ui.screens
 
+import android.content.Context
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -24,10 +26,13 @@ import androidx.compose.ui.unit.sp
 import com.example.beetles.R
 import com.example.beetles.models.Insect
 import com.example.beetles.models.InsectType
+import com.example.beetles.models.Bonus
+import com.example.beetles.models.BonusType
+import com.example.beetles.utils.AccelerometerManager
+import com.example.beetles.utils.SoundManager
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
-// Константы для оптимизации
 private const val GAME_TICK_MS = 50L
 private const val SPAWN_BASE_DELAY_MS = 3000L
 private const val MISS_PENALTY = 5
@@ -45,25 +50,47 @@ fun GameScreen(
 ) {
     var score by remember { mutableStateOf(0) }
     var gameTime by remember { mutableStateOf(settings.roundDuration) }
-    var isGameRunning by remember { mutableStateOf(false) } // Игра не начинается сразу
+    var isGameRunning by remember { mutableStateOf(false) }
     var isPaused by remember { mutableStateOf(false) }
     var insects by remember { mutableStateOf(listOf<Insect>()) }
+    var bonuses by remember { mutableStateOf(listOf<Bonus>()) }
     var gameOver by remember { mutableStateOf(false) }
+    var gravityEnabled by remember { mutableStateOf(false) }
+    var bonusTimeLeft by remember { mutableStateOf(0) }
+    var lastBonusActivation by remember { mutableStateOf(0L) }
     
+    val context = LocalContext.current
     val density = LocalDensity.current
     
-    // Автоматический запуск игры при открытии экрана
+    val accelerometerManager = remember { AccelerometerManager(context) }
+    val soundManager = remember { SoundManager(context) }
+    val gravity by accelerometerManager.gravity
+    
+    LaunchedEffect(gravityEnabled) {
+        if (gravityEnabled) accelerometerManager.startListening() else accelerometerManager.stopListening()
+    }
+    
+    DisposableEffect(Unit) {
+        onDispose {
+            accelerometerManager.stopListening()
+            soundManager.release()
+        }
+    }
+    
     LaunchedEffect(Unit) {
-        delay(500) // Небольшая задержка для загрузки UI
+        delay(500)
         isGameRunning = true
         gameTime = settings.roundDuration
         score = 0
         insects = emptyList()
+        bonuses = emptyList()
         gameOver = false
         isPaused = false
+        gravityEnabled = false
+        bonusTimeLeft = 0
+        lastBonusActivation = 0L
     }
     
-    // Оптимизированный игровой цикл - объединяем все в один LaunchedEffect
     LaunchedEffect(isGameRunning, isPaused, settings.gameSpeed, difficulty) {
         if (!isGameRunning || gameOver || isPaused) return@LaunchedEffect
         
@@ -73,12 +100,19 @@ fun GameScreen(
         
         while (isGameRunning && gameTime > 0 && !isPaused) {
             val currentTime = System.currentTimeMillis()
-            val deltaTime = currentTime - gameStartTime
             
-            // Обновление игрового времени (каждую секунду)
             if (currentTime - lastGameTimeUpdate >= 1000) {
                 gameTime--
                 lastGameTimeUpdate = currentTime
+                
+                if (bonusTimeLeft > 0) {
+                    bonusTimeLeft--
+                    if (bonusTimeLeft <= 0) {
+                        gravityEnabled = false
+                        insects = insects.map { it.copy(isAffectedByGravity = false, hasScreamed = false) }
+                    }
+                }
+                
                 if (gameTime <= 0) {
                     gameOver = true
                     isGameRunning = false
@@ -86,23 +120,44 @@ fun GameScreen(
                 }
             }
             
-            // Создание насекомых
+            val shouldSpawnBonus = if (lastBonusActivation == 0L) {
+                currentTime - gameStartTime >= settings.bonusInterval * 1000L
+            } else {
+                currentTime - lastBonusActivation >= settings.bonusInterval * 1000L
+            }
+            
+            if (shouldSpawnBonus && bonuses.isEmpty()) {
+                bonuses = listOf(createRandomBonus())
+                soundManager.playBonusSound()
+            }
+            
             val spawnDelay = (SPAWN_BASE_DELAY_MS - (difficulty - 1) * 200) / settings.gameSpeed
             if (currentTime - lastSpawnTime >= spawnDelay && insects.size < settings.maxCockroaches) {
-                val newInsect = createRandomInsect(difficulty)
-                insects = insects + newInsect
+                insects = insects + createRandomInsect(difficulty, gravityEnabled)
                 lastSpawnTime = currentTime
             }
             
-            // Движение насекомых (оптимизированное)
             val speedMultiplier = 0.5f + (difficulty - 1) * 0.25f
             insects = insects.mapNotNull { insect ->
-                val newPosition = insect.position + insect.velocity * settings.gameSpeed * speedMultiplier
-                // Проверяем границы экрана
+                var newVelocity = insect.velocity
+                var updatedInsect = insect
+                
+                if (insect.isAffectedByGravity && gravityEnabled) {
+                    val oldVelocityY = newVelocity.y
+                    newVelocity += gravity * 2f
+                    
+                    if (!insect.hasScreamed && newVelocity.y > oldVelocityY + 1f) {
+                        soundManager.playBeetleScream()
+                        updatedInsect = insect.copy(hasScreamed = true)
+                    }
+                }
+                
+                val newPosition = updatedInsect.position + newVelocity * settings.gameSpeed * speedMultiplier
+                
                 if (newPosition.x > -50 && newPosition.x < SCREEN_BOUNDS && 
                     newPosition.y > -50 && newPosition.y < SCREEN_BOUNDS) {
-                    insect.copy(position = newPosition)
-                } else null // Удаляем насекомых за границами
+                    updatedInsect.copy(position = newPosition, velocity = newVelocity)
+                } else null
             }
             
             delay(GAME_TICK_MS / settings.gameSpeed.toLong())
@@ -114,48 +169,72 @@ fun GameScreen(
             .fillMaxSize()
             .background(Color(0xFF2E7D32))
     ) {
-        // Верхняя панель с информацией
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Очки: $score",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Время: $gameTime",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Очки: $score", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text("Время: $gameTime", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         
-        Text(
-            text = "Игрок: $playerName",
-            color = Color.White,
-            fontSize = 16.sp,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Игрок: $playerName", color = Color.White, fontSize = 16.sp)
+            
+            if (gravityEnabled && bonusTimeLeft > 0) {
+                Text("🌟 Гравитация: ${bonusTimeLeft}с", color = Color.Yellow, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
+        }
 
-        // Игровое поле
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
                 .clickable { 
-                    // Штраф за промах
                     if (isGameRunning && !gameOver && !isPaused) {
                         score = maxOf(0, score - MISS_PENALTY)
                     }
                 }
         ) {
-            // Отрисовка насекомых с анимациями
+            bonuses.forEach { bonus ->
+                if (bonus.isActive) {
+                    val bonusSize = 60.dp
+                    val scale by animateFloatAsState(
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(1000, easing = EaseInOutSine),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "bonus_pulse"
+                    )
+                    
+                    Image(
+                        painter = painterResource(id = R.drawable.bonus_gravity),
+                        contentDescription = "Бонус гравитации",
+                        modifier = Modifier
+                            .offset(
+                                x = with(density) { bonus.position.x.toDp() - bonusSize / 2 },
+                                y = with(density) { bonus.position.y.toDp() - bonusSize / 2 }
+                            )
+                            .size(bonusSize)
+                            .graphicsLayer { scaleX = scale; scaleY = scale }
+                            .clickable {
+                                if (isGameRunning && !gameOver && !isPaused) {
+                                    bonuses = bonuses.filter { it.id != bonus.id }
+                                    gravityEnabled = true
+                                    bonusTimeLeft = 10
+                                    lastBonusActivation = System.currentTimeMillis()
+                                    insects = insects.map { it.copy(isAffectedByGravity = true, hasScreamed = false) }
+                                }
+                            }
+                    )
+                }
+            }
+            
             insects.forEach { insect ->
                 val iconRes = when (insect.type) {
                     InsectType.COCKROACH -> R.drawable.cockroach_simple
@@ -163,13 +242,12 @@ fun GameScreen(
                 }
                 val iconSize = INSECT_SIZE_DP.dp
                 
-                // Проверяем, что позиция насекомого валидна
                 if (insect.position.x >= 0 && insect.position.y >= 0) {
-                    // Анимация масштаба для появления насекомого
-                    val scale by animateFloatAsState(
-                        targetValue = 1f,
-                        animationSpec = tween(300, easing = EaseOutBack),
-                        label = "insect_scale"
+                    val scale by animateFloatAsState(1f, tween(300, easing = EaseOutBack), label = "insect_scale")
+                    val rotation by animateFloatAsState(
+                        if (insect.isAffectedByGravity) 15f else 0f, 
+                        tween(500), 
+                        label = "insect_rotation"
                     )
                     
                     Image(
@@ -181,21 +259,15 @@ fun GameScreen(
                                 y = with(density) { insect.position.y.toDp() - iconSize / 2 }
                             )
                             .size(iconSize)
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                            }
+                            .graphicsLayer { scaleX = scale; scaleY = scale; rotationZ = rotation }
                             .clickable {
                                 if (isGameRunning && !gameOver && !isPaused) {
-                                    // Удаляем насекомое
                                     insects = insects.filter { it.id != insect.id }
-                                    
-                                    // Начисляем очки
                                     when (insect.type) {
                                         InsectType.COCKROACH -> score += COCKROACH_SCORE
                                         InsectType.POISONOUS -> score -= POISONOUS_PENALTY
                                     }
-                                    score = maxOf(0, score) // Не даем уйти в минус
+                                    score = maxOf(0, score)
                                 }
                             }
                     )
@@ -207,24 +279,20 @@ fun GameScreen(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "Игра окончена!",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Финальный счет: $score",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
+                    Text("Игра окончена!", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("Финальный счет: $score", color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(vertical = 8.dp))
                     Button(
                         onClick = { 
                             gameOver = false
                             isGameRunning = false
                             isPaused = false
                             insects = emptyList()
+                            bonuses = emptyList()
+                            gravityEnabled = false
+                            bonusTimeLeft = 0
+                            lastBonusActivation = 0L
+                            score = 0
+                            gameTime = settings.roundDuration
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
@@ -238,16 +306,9 @@ fun GameScreen(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "ПАУЗА",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("ПАУЗА", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Button(
-                        onClick = { 
-                            isPaused = false
-                        },
+                        onClick = { isPaused = false },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
                         Text("Продолжить", color = Color.White)
@@ -256,11 +317,8 @@ fun GameScreen(
             }
         }
         
-        // Нижняя панель
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             Button(
@@ -272,9 +330,7 @@ fun GameScreen(
             
             if (isGameRunning && !gameOver && !isPaused) {
                 Button(
-                    onClick = { 
-                        isPaused = true
-                    },
+                    onClick = { isPaused = true },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
                 ) {
                     Text("Пауза", color = Color.White)
@@ -284,29 +340,28 @@ fun GameScreen(
     }
 }
 
-private fun createRandomInsect(difficulty: Int): Insect {
-    // Сложность влияет на вероятность появления ядовитых тараканов
+private fun createRandomInsect(difficulty: Int, gravityEnabled: Boolean = false): Insect {
     val poisonousChance = when {
-        difficulty <= 3 -> 10  // Легко: 10% ядовитых
-        difficulty <= 6 -> 20  // Средне: 20% ядовитых
-        else -> 30             // Сложно: 30% ядовитых
+        difficulty <= 3 -> 10
+        difficulty <= 6 -> 20
+        else -> 30
     }
     
-    val type = when (Random.nextInt(100)) {
-        in 0..(100 - poisonousChance - 1) -> InsectType.COCKROACH
-        else -> InsectType.POISONOUS
-    }
-    
-    val startX = Random.nextFloat() * 800f
-    val startY = Random.nextFloat() * 600f
-    val velocityX = (Random.nextFloat() - 0.5f) * 4f
-    val velocityY = (Random.nextFloat() - 0.5f) * 4f
+    val type = if (Random.nextInt(100) < poisonousChance) InsectType.POISONOUS else InsectType.COCKROACH
     
     return Insect(
         id = Random.nextInt(),
-        position = Offset(startX, startY),
-        velocity = Offset(velocityX, velocityY),
-        type = type
+        position = Offset(Random.nextFloat() * 800f, Random.nextFloat() * 600f),
+        velocity = Offset((Random.nextFloat() - 0.5f) * 4f, (Random.nextFloat() - 0.5f) * 4f),
+        type = type,
+        isAffectedByGravity = gravityEnabled,
+        hasScreamed = false
     )
 }
+
+private fun createRandomBonus(): Bonus = Bonus(
+    id = Random.nextInt(),
+    position = Offset(Random.nextFloat() * 700f + 50f, Random.nextFloat() * 500f + 50f),
+    type = BonusType.GRAVITY
+)
 
