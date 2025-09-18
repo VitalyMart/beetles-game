@@ -7,10 +7,23 @@ data class Insect(
     val position: Offset,
     val velocity: Offset,
     val type: InsectType,
-    val size: Float = 50f
+    val size: Float = 50f,
+    val isAffectedByGravity: Boolean = false,
+    val hasScreamed: Boolean = false
 )
 
 enum class InsectType {
-    COCKROACH,    // +10 очков
-    POISONOUS     // -20 очков
+    COCKROACH,
+    POISONOUS
+}
+
+data class Bonus(
+    val id: Int,
+    val position: Offset,
+    val isActive: Boolean = true,
+    val type: BonusType = BonusType.GRAVITY
+)
+
+enum class BonusType {
+    GRAVITY
 }
